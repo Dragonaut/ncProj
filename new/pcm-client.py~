@@ -103,6 +103,6 @@ gst.Element.set_state(pipe, gst.STATE_PLAYING)
 
 #NOTE this must be changed to GTK+ type
 mainloop = gobject.MainLoop()
-mainloop.run() 
+#mainloop.run() 
 
 gst.Element.set_state(pipe, gst.STATE_NULL) 

@@ -6,11 +6,12 @@ import gst
 DEST_HOST = '127.0.0.1'
 
 #define the source of audio
-#AUDIO_SRC = 'audiotestsrc'
-AUDIO_SRC = "autoaudiosrc"
+AUDIO_SRC = 'audiotestsrc'
+#AUDIO_SRC = "autoaudiosrc"
 #define the encoder mechanism
 AUDIO_ENC = 'alawenc'
 #AUDIO_ENC = 'wavparse'
+#AUDIO_ENC = 'vorbisenc'
 #define the payload type
 AUDIO_PAY = 'rtppcmapay'
 #AUDIO_PAY = 'rtpL16pay'
@@ -106,6 +107,11 @@ gst.Element.set_state(pipe, gst.STATE_PLAYING)
 # Then we receive messages iteratively using GObject loop
 # NOTE: Change this to GTK+ loop if changing to GUI-based system
 mainloop = gobject.MainLoop()
-mainloop.run()
+gobject.threads_init()
+context = mainloop.get_context()
+#mainloop.run()
+
+while 1: 
+	context.iteration(True)
 
 gst.Element.set_state(pipe, gst.STATE_NULL)
