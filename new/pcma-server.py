@@ -2,67 +2,88 @@ import gobject, pygst
 pygst.require("0.10")
 import gst
 
-#gst-launch -v gstrtpbin name=rtpbin audiotestsrc ! audioconvert ! alawenc ! rtppcmapay ! rtpbin.send_rtp_sink_0 \
-# rtpbin.send_rtp_src_0 ! udpsink port=10000 host=xxx.xxx.xxx.xxx \
-# rtpbin.send_rtcp_src_0 ! udpsink port=10001 host=xxx.xxx.xxx.xxx sync=false async=false \
-# udpsrc port=10002 ! rtpbin.recv_rtcp_sink_0
-
+#define the IP address to use
 DEST_HOST = '127.0.0.1'
 
-AUDIO_SRC = 'audiotestsrc'
+#define the source of audio
+#AUDIO_SRC = 'audiotestsrc'
+AUDIO_SRC = "autoaudiosrc"
+#define the encoder mechanism
 AUDIO_ENC = 'alawenc'
+#AUDIO_ENC = 'wavparse'
+#define the payload type
 AUDIO_PAY = 'rtppcmapay'
+#AUDIO_PAY = 'rtpL16pay'
 
+#RTP port
 RTP_SEND_PORT = 5002
+#RTCP outbound port
+#Conventionally should be RTPSEND+1
 RTCP_SEND_PORT = 5003
+#RTCP receive port
 RTCP_RECV_PORT = 5007
 
-# the pipeline to hold everything
-pipeline = gst.Pipeline('rtp_server')
+#initialize pipeline
+pipe = gst.Pipeline('rtp_server')
 
-# the pipeline to hold everything
+#set gstreamer audio parameters
+#source
 audiosrc = gst.element_factory_make(AUDIO_SRC, 'audiosrc')
+#audiosrc = gst.element_factory_make("filesrc", '../../wavSamples/timecodeAlignTest2.wav')
+#conversion
 audioconv = gst.element_factory_make('audioconvert', 'audioconv')
+#resample rate
 audiores = gst.element_factory_make('audioresample', 'audiores')
-
-# the pipeline to hold everything
+#encoding type
 audioenc = gst.element_factory_make(AUDIO_ENC, 'audioenc')
+#payload element
 audiopay = gst.element_factory_make(AUDIO_PAY, 'audiopay')
 
-# add capture and payloading to the pipeline and link
-pipeline.add(audiosrc, audioconv, audiores, audioenc, audiopay)
+#line up the pipeline elements instantiated so far
+pipe.add(audiosrc, audioconv, audiores, audioenc, audiopay)
 
+#fit together the pipeline elements 
 res = gst.element_link_many(audiosrc, audioconv, audiores, audioenc, audiopay)
 
-# the rtpbin element
+#create an rtpbin element
 rtpbin = gst.element_factory_make('gstrtpbin', 'rtpbin')
 
-pipeline.add(rtpbin)
+#line up the pipeline element
+pipe.add(rtpbin)
 
-# the udp sinks and source we will use for RTP and RTCP
+# Instantiate UDP sink utilizing RTP
 rtpsink = gst.element_factory_make('udpsink', 'rtpsink')
+#set up port for RTP to send
 rtpsink.set_property('port', RTP_SEND_PORT)
+#set up host
 rtpsink.set_property('host', DEST_HOST)
 
+#instantiate UDP sink utilizing RTCP
+#RTCP provides control packets
 rtcpsink = gst.element_factory_make('udpsink', 'rtcpsink')
+#set up port for RTCP to send
 rtcpsink.set_property('port', RTCP_SEND_PORT)
+#set up host for RTCP
 rtcpsink.set_property('host', DEST_HOST)
-# no need for synchronisation or preroll on the RTCP sink
+#Explicitly disallow synchronization... no need in my application
 rtcpsink.set_property('async', False)
 rtcpsink.set_property('sync', False)
 
+#receiver for rtcp packets
 rtcpsrc = gst.element_factory_make('udpsrc', 'rtcpsrc')
 rtcpsrc.set_property('port', RTCP_RECV_PORT)
 
-pipeline.add(rtpsink, rtcpsink, rtcpsrc)
+#line up the pipeline elements just instantiated
+pipe.add(rtpsink, rtcpsink, rtcpsrc)
 
-# now link all to the rtpbin, start by getting an RTP sinkpad for session 0
+# fit together pipes for rtpbin
+#gettan RTP sinkpad for session 0
 sinkpad = gst.Element.get_request_pad(rtpbin, 'send_rtp_sink_0')
 srcpad = gst.Element.get_static_pad(audiopay, 'src')
 lres = gst.Pad.link(srcpad, sinkpad)
 
-# get the RTP srcpad that was created when we requested the sinkpad above and
-# link it to the rtpsink sinkpad
+# Get RTP syncpad from above
+# fit together pipes to rtpsink sinkpad
 srcpad = gst.Element.get_static_pad(rtpbin, 'send_rtp_src_0')
 sinkpad = gst.Element.get_static_pad(rtpsink, 'sink')
 lres = gst.Pad.link(srcpad, sinkpad)
@@ -72,17 +93,19 @@ srcpad = gst.Element.get_request_pad(rtpbin, 'send_rtcp_src_0')
 sinkpad = gst.Element.get_static_pad(rtcpsink, 'sink')
 lres = gst.Pad.link(srcpad, sinkpad)
 
-# we also want to receive RTCP, request an RTCP sinkpad for session 0 and
-# link it to the srcpad of the udpsrc for RTCP
+# This will receive RTCP packets
+# So, request an RTCP sinkpad for session 0 and
+# fit it to the srcpad of the udpsrc for RTCP
 srcpad = gst.Element.get_static_pad(rtcpsrc, 'src')
 sinkpad = gst.Element.get_request_pad(rtpbin, 'recv_rtcp_sink_0')
 lres = gst.Pad.link(srcpad, sinkpad)
 
 # set the pipeline to playing
-gst.Element.set_state(pipeline, gst.STATE_PLAYING)
+gst.Element.set_state(pipe, gst.STATE_PLAYING)
 
-# we need to run a GLib main loop to get the messages
+# Then we receive messages iteratively using GObject loop
+# NOTE: Change this to GTK+ loop if changing to GUI-based system
 mainloop = gobject.MainLoop()
 mainloop.run()
 
-gst.Element.set_state(pipeline, gst.STATE_NULL)
+gst.Element.set_state(pipe, gst.STATE_NULL)

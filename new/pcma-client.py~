@@ -1,10 +1,7 @@
-#! /usr/bin/env python 
-
 import pygst
 pygst.require("0.10")
 import gst
-import gobject
-    
+import gobject    
 
 AUDIO_CAPS = 'application/x-rtp,media=(string)audio,clock-rate=(int)8000,encoding-name=(string)PCMA'
 AUDIO_DEPAY = 'rtppcmadepay'

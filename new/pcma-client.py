@@ -3,90 +3,106 @@ pygst.require("0.10")
 import gst
 import gobject    
 
+#Define the audio capture source
 AUDIO_CAPS = 'application/x-rtp,media=(string)audio,clock-rate=(int)8000,encoding-name=(string)PCMA'
+#AUDIO_CAPS = 'application/x-rtp,media=(string)audio,clock-rate=(int)44100,encoding-name=(string)WAV'
+#Define audio depayload property
 AUDIO_DEPAY = 'rtppcmadepay'
+#Define audio decoder
 AUDIO_DEC = 'alawdec'
+#AUDIO_DEC = 'wavparse'
+#Define audio sink for playback
 AUDIO_SINK = 'autoaudiosink'
 
+#set destination IP address
 DEST = '127.0.0.1'
 
+#set RTP receiver port
 RTP_RECV_PORT = 5002
+#set RTCP receiver port
+#conventially is RTP+1
 RTCP_RECV_PORT = 5003
+#Set RTCP sender port
 RTCP_SEND_PORT = 5007 
 
-#gst-launch -v gstrtpbin name=rtpbin                                                \
-#       udpsrc caps=$AUDIO_CAPS port=$RTP_RECV_PORT ! rtpbin.recv_rtp_sink_0              \
-#             rtpbin. ! rtppcmadepay ! alawdec ! audioconvert ! audioresample ! autoaudiosink \
-#           udpsrc port=$RTCP_RECV_PORT ! rtpbin.recv_rtcp_sink_0                              \
-#         rtpbin.send_rtcp_src_0 ! udpsink port=$RTCP_SEND_PORT host=$DEST sync=false async=false
-
+#define function for adding sinkpad according to example conventions
 def pad_added_cb(rtpbin, new_pad, depay):
     sinkpad = gst.Element.get_static_pad(depay, 'sink')
     lres = gst.Pad.link(new_pad, sinkpad)
 
-# the pipeline to hold eveything 
-pipeline = gst.Pipeline('rtp_client')
+# Instantiate a pipeline
+pipe = gst.Pipeline('rtp_client')
 
-# the udp src and source we will use for RTP and RTCP
+# UDP source element
 rtpsrc = gst.element_factory_make('udpsrc', 'rtpsrc')
+# Prepare for RTP receive
 rtpsrc.set_property('port', RTP_RECV_PORT)
 
-# we need to set caps on the udpsrc for the RTP data
+# Explicitly set CAPS for UDP source
 caps = gst.caps_from_string(AUDIO_CAPS)
 rtpsrc.set_property('caps', caps)
 
+#instantiate the RTCP source
 rtcpsrc = gst.element_factory_make('udpsrc', 'rtcpsrc')
 rtcpsrc.set_property('port', RTCP_RECV_PORT)
 
+#Instantiate RTCP sink for UDP
 rtcpsink = gst.element_factory_make('udpsink', 'rtcpsink')
 rtcpsink.set_property('port', RTCP_SEND_PORT)
 rtcpsink.set_property('host', DEST)
-
-# no need for synchronisation or preroll on the RTCP sink
+#Explicitly disallow the synchronization properties
 rtcpsink.set_property('async', False)
 rtcpsink.set_property('sync', False) 
 
-pipeline.add(rtpsrc, rtcpsrc, rtcpsink)
+#fit together the pipeline elements
+pipe.add(rtpsrc, rtcpsrc, rtcpsink)
 
-# the depayloading and decoding
+# define depayloading
 audiodepay = gst.element_factory_make(AUDIO_DEPAY, 'audiodepay')
+# define decoding of audio
 audiodec = gst.element_factory_make(AUDIO_DEC, 'audiodec')
-
-# the audio playback and format conversion
+#audio conversion
 audioconv = gst.element_factory_make('audioconvert', 'audioconv')
+#audio sample rate resolution
 audiores = gst.element_factory_make('audioresample', 'audiores')
+#audio sink definition
 audiosink = gst.element_factory_make(AUDIO_SINK, 'audiosink')
 
-# add depayloading and playback to the pipeline and link
-pipeline.add(audiodepay, audiodec, audioconv, audiores, audiosink)
+# fit the above together to pipeline
+pipe.add(audiodepay, audiodec, audioconv, audiores, audiosink)
 
 res = gst.element_link_many(audiodepay, audiodec, audioconv, audiores, audiosink)
 
 # the rtpbin element
 rtpbin = gst.element_factory_make('gstrtpbin', 'rtpbin') 
 
-pipeline.add(rtpbin)
+#fit together pipeline with rtpbin
+pipe.add(rtpbin)
 
-# now link all to the rtpbin, start by getting an RTP sinkpad for session 0
+# fit everything to the RTPbin
+# start by getting an RTP sinkpad for session 0
 srcpad = gst.Element.get_static_pad(rtpsrc, 'src')
 sinkpad = gst.Element.get_request_pad(rtpbin, 'recv_rtp_sink_0')
 lres = gst.Pad.link(srcpad, sinkpad)
 
-# get an RTCP sinkpad in session 0
+# define an RTCP sinkpad in session 0
 srcpad = gst.Element.get_static_pad(rtcpsrc, 'src')
 sinkpad = gst.Element.get_request_pad(rtpbin, 'recv_rtcp_sink_0')
 lres = gst.Pad.link(srcpad, sinkpad)
 
-# get an RTCP srcpad for sending RTCP back to the sender
+# define an RTCP srcpad for sending RTCP back to the sender
 srcpad = gst.Element.get_request_pad(rtpbin, 'send_rtcp_src_0')
 sinkpad = gst.Element.get_static_pad(rtcpsink, 'sink')
 lres = gst.Pad.link(srcpad, sinkpad)
 
+#explicit connection to RTPbin
 rtpbin.connect('pad-added', pad_added_cb, audiodepay) 
 
-gst.Element.set_state(pipeline, gst.STATE_PLAYING)
+#play!
+gst.Element.set_state(pipe, gst.STATE_PLAYING)
 
+#NOTE this must be changed to GTK+ type
 mainloop = gobject.MainLoop()
 mainloop.run() 
 
-gst.Element.set_state(pipeline, gst.STATE_NULL) 
+gst.Element.set_state(pipe, gst.STATE_NULL) 
